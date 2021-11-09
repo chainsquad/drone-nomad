@@ -4,12 +4,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"reflect"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/drone/envsubst"
 
 	"drone-nomad/nomad"
 )
@@ -167,34 +164,8 @@ func (p Plugin) Exec() error {
 	return nil
 }
 
-func (p Plugin) envMap() []string {
-	structVal := make([]string, 0)
-	u := reflect.ValueOf(p)
-
-	for k := 0; k < u.NumField(); k++ {
-		field := u.Field(k)
-		fieldType := field.Type()
-
-		for j := 0; j < fieldType.NumField(); j++ {
-			nestedField := fieldType.Field(j)
-			fieldName := nestedField.Name
-			fieldTag := nestedField.Tag.Get("env")
-
-			f := reflect.Indirect(field).FieldByName(fieldName)
-			if f.IsValid() {
-				structVal = append(structVal, fieldTag)
-			}
-		}
-	}
-
-	return structVal
-}
-
 // replaceEnv changes vars from template
 func (p Plugin) replaceEnv(template string) string {
-
-	// Get current passed vars
-	templateVars := p.envMap()
 
 	// Regular expression matching var expression ${...}
 	reVars := regexp.MustCompile(`(?m)\$\{(.+?)\}`)
@@ -204,39 +175,28 @@ func (p Plugin) replaceEnv(template string) string {
 		// Find the exact var name inside match, e.g. ${DRONE_TAG=latest} becomes "DRONE_TAG=latest"
 		matches := reVars.FindStringSubmatch(s)
 
+		envName := ""
+		envValue := ""
+
 		// Check string sufix
 		if strings.HasSuffix(matches[1], SanitizeSuffix) {
-
 			// Remove Suffix
-			envName := strings.TrimSuffix(matches[1], SanitizeSuffix)
-
+			envName = strings.TrimSuffix(matches[1], SanitizeSuffix)
 			// Get var content
-			envValue := os.Getenv(envName)
+			envValue = strings.ToLower(os.Getenv(envName))
+		} else {
+			envName = matches[1]
+			envValue = os.Getenv(envName)
+		}
 
 			r, _ := regexp.Compile(`[^a-z0-9]`)
-			replacedString := r.ReplaceAllString(strings.ToLower(envValue), "-")
+			replacedString := r.ReplaceAllString(envValue, "-")
 
 			if p.Config.Debug {
-				fmt.Printf("Replacing (var: %s, value: %s) to %s\n", envName, strings.ToLower(envValue), replacedString)
+				fmt.Printf("Replacing (var: %s, value: %s) to %s\n", envName, envValue, replacedString)
 			}
 
 			return replacedString
-		}
-
-		// Loop over our known template vars if they can be replaced, otherwise return the original string
-		for i := range templateVars {
-
-			// Check if the found var starts with one of our known vars
-			if strings.Index(matches[1], templateVars[i]) == 0 {
-				subst, err := envsubst.EvalEnv(s)
-				if err != nil {
-					return s
-				}
-				return subst
-			}
-		}
-
-		return s
 	})
 
 	return template
