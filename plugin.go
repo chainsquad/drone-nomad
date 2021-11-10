@@ -175,6 +175,11 @@ func (p Plugin) replaceEnv(template string) string {
 		// Find the exact var name inside match, e.g. ${DRONE_TAG=latest} becomes "DRONE_TAG=latest"
 		matches := reVars.FindStringSubmatch(s)
 
+		// Do not replace NOMAD_ variables
+		if strings.HasPrefix(matches[1], "NOMAD_") {
+			return matches[1]
+		}
+
 		envName := ""
 		envValue := ""
 
@@ -189,14 +194,11 @@ func (p Plugin) replaceEnv(template string) string {
 			envValue = os.Getenv(envName)
 		}
 
-			r, _ := regexp.Compile(`[^a-z0-9]`)
-			replacedString := r.ReplaceAllString(envValue, "-")
+		if p.Config.Debug {
+			fmt.Printf("Replacing (var: %s, value: %s)", envName, envValue)
+		}
 
-			if p.Config.Debug {
-				fmt.Printf("Replacing (var: %s, value: %s) to %s\n", envName, envValue, replacedString)
-			}
-
-			return replacedString
+		return envValue
 	})
 
 	return template
